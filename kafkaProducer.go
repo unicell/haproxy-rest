@@ -1,13 +1,13 @@
 package main
-import (
-	"github.com/Shopify/sarama"
-	"strconv"
-	"encoding/json"
-	"time"
-	"strings"
-	"reflect"
-)
 
+import (
+	//"encoding/json"
+	"github.com/Shopify/sarama"
+	//"reflect"
+	"strconv"
+	//"strings"
+	"time"
+)
 
 func setUpProducer(host string, port int, mode string) {
 
@@ -15,86 +15,76 @@ func setUpProducer(host string, port int, mode string) {
 
 	log.Info("Connecting to Kafka on " + connection + "...")
 
-	clientConfig := sarama.NewClientConfig()
-	clientConfig.WaitForElection = (10 * time.Second)
+	config := sarama.NewConfig()
+	config.Metadata.Retry.Backoff = (10 * time.Second)
 
+	// We are just streaming metrics, so don't not wait for any Kafka Acks.
+	config.Producer.RequiredAcks = sarama.NoResponse
+	config.Producer.Compression = sarama.CompressionGZIP
+	config.Producer.Flush.Frequency = 500 * time.Millisecond
 
-	client, err := sarama.NewClient("client_id", []string{connection}, clientConfig)
+	client, err := sarama.NewClient([]string{connection}, config)
 	if err != nil {
 		panic(err)
 	} else {
 		log.Info("Connection to Kafka successful")
 	}
 
-	/**
-	*	 Create a producer with some specific setting
-	*/
-	producerConfig := sarama.NewProducerConfig()
-
-	// if delivering messages async,  buffer them for at most MaxBufferTime
-	producerConfig.MaxBufferTime = (2 * time.Second)
-
-	// max bytes in buffer
-	producerConfig.MaxBufferedBytes = 51200
-
-	// Use zip compression
-	producerConfig.Compression = 0
-
-	// We are just streaming metrics, so don't not wait for any Kafka Acks.
-	producerConfig.RequiredAcks = -1
-
-	producer, err := sarama.NewProducer(client, producerConfig)
+	producer, err := sarama.NewAsyncProducerFromClient(client)
 	if err != nil {
 		panic(err)
 	}
 
-	go pushMetrics(producer,mode)
+	go pushMetrics(producer, mode)
 
 }
 
 // pushMetrics pushes the load balancer statistic to a Kafka Topic
-func pushMetrics(producer *sarama.Producer, mode string) {
+func pushMetrics(producer sarama.AsyncProducer, mode string) {
 
 	// The list of metrics we want to filter out of the total stats dump from haproxy
-	wantedMetrics  := []string{ "Scur", "Qcur","Smax","Slim","Weight","Qtime","Ctime","Rtime","Ttime","Req_rate","Req_rate_max","Req_tot","Rate","Rate_lim","Rate_max" }
+	//wantedMetrics := []string{"Scur", "Qcur", "Smax", "Slim", "Weight", "Qtime", "Ctime", "Rtime", "Ttime", "Req_rate", "Req_rate_max", "Req_tot", "Rate", "Rate_lim", "Rate_max"}
 
 	// get metrics every second, for ever.
-	for  {
+	for {
 
-			stats, _ := GetStats("all")
-		    localTime := int64(time.Now().Unix())
-
+		//stats, _ := GetStats("all")
+		//localTime := int64(time.Now().Unix())
 
 		// for each proxy in the stats dump, pick out the wanted metrics, parse them and send 'm to Kafka
-			for _,proxy := range stats {
+		//for _, proxy := range stats {
 
-				// filter out the metrics for haproxy's own stats page
-				if (proxy.Pxname != "stats") {
+		// filter out the metrics for haproxy's own stats page
+		//if proxy.Pxname != "stats" {
 
-					// loop over all wanted metrics for the current proxy
-					for _,metric := range wantedMetrics {
+		// loop over all wanted metrics for the current proxy
+		//for _, metric := range wantedMetrics {
 
-						fullMetricName := proxy.Pxname + "." + strings.ToLower(proxy.Svname) + "." + strings.ToLower(metric)
-						field  := reflect.ValueOf(proxy).FieldByName(metric).String()
-						if (field != "") {
+		//fullMetricName := proxy.Pxname + "." + strings.ToLower(proxy.Svname) + "." + strings.ToLower(metric)
+		//field := reflect.ValueOf(proxy).FieldByName(metric).String()
+		//if field != "" {
 
-							metricValue,_ := strconv.Atoi(field)
+		//metricValue, _ := strconv.Atoi(field)
 
-							metricObj := Metric{fullMetricName, metricValue, localTime}
-							jsonObj, _ := json.MarshalIndent(metricObj, "", " ")
+		//metricObj := Metric{fullMetricName, metricValue, localTime}
+		//jsonObj, _ := json.MarshalIndent(metricObj, "", " ")
 
-							err := producer.SendMessage(mode+"."+"all", sarama.StringEncoder("lbmetrics"), sarama.StringEncoder(jsonObj))
-							if err != nil {
+		//ProducerLoop:
+		//for {
+		//message := &ProducerMessage{Topic: mode + "." + "all" + sarama.StringEncoder("lbmetrics"), Value: sarama.StringEncoder(jsonObj)}
+		//select {
+		//case producer.Input() <- message:
+		//enqueued++
+		//case <-signals:
+		//producer.AsyncClose() // Trigger a shutdown of the producer.
+		//break ProducerLoop
+		//}
+		//}
 
-								log.Error("Error sending message to Kafka " + err.Error())
-
-							} else {
-								log.Debug("Successfully sent message to Kafka on topic: " + mode + "." + "all")
-							}
-						}
-					}
-				}
-			}
+		//}
+		//}
+		//}
+		//}
 		time.Sleep(3000 * time.Millisecond)
 	}
 }
